@@ -16,12 +16,7 @@
 
 package org.typelevel.sbt.gha
 
-sealed abstract class Paths extends Product with Serializable
+object PluginCompat {
+  type IterableOnce[+A] = scala.TraversableOnce[A]
 
-object Paths {
-  final case class Include(paths: List[String]) extends Paths
-
-  final case class Ignore(path: List[String]) extends Paths
-
-  case object None extends Paths
 }
