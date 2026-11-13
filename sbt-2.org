@@ -1,0 +1,1074 @@
+* Caching
+All tasks are cached by default.
+Docs: https://www.scala-sbt.org/2.x/docs/en/concepts/caching.html
+
+For =sbt-typelevel=, the main affected task is =githubWorkflowGenerate=.
+
+All =git= based calculations are affected, but these are settings, not tasks. I'm unsure how SBT deals with caching for setting values.
+
+** How to troubleshoot caching
+Docs: https://www.scala-sbt.org/2.x/docs/en/reference/cached-task.html
+
+All tasks are cached in a global cache. My cache is in [[file:~/Library/Caches/sbt/v2/]] . It is content-addressable storage:
+ - The =ac= directory contains keys
+ - The =cas= directory contains values
+
+*** How to get an execution log of cached values
+
+We can get an execution log with =sbt --server -Dsbt.experimental_execution_log=true= .
+
+#+begin_src sh
+pkill java # ensure there are no SBT processes running
+cd ../sbt-typelevel-playground
+rm target/global-logging/* # Remove old log files
+rm ~/Library/Caches/sbt/v2/cas/*
+rm ~/Library/Caches/sbt/v2/ac/*
+sbt --server -Dsbt.experimental_execution_log=true
+#+end_src
+
+The log is stored in an =exec-log= file in =target/global-logging=: [[file:~/dev/typelevel/sbt-typelevel-playground/target/global-logging][target/global-logging]] .
+
+Open the log file in Emacs and toggle =js-ts-mode=, =display-line-numbers-mode= , =auto-revert-tail-mode= .
+
+For example, the =foo=  task has the following output:
+#+begin_src js
+{
+  "input": {
+    "digest": "sha256-6afd2d448c7f44aa83f05d03c02936fee8218490e3adb8e78d7a147f54a06a16/48",
+    "codeContentHash": "murmur3-0000000000000000ffffffffcc84ff9c/0",
+    "extraHash": "murmur3-00000000000000000000000000000000/0",
+    "str": "(/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml)"
+  },
+  "cacheHit": true,
+  "exitCode": 0,
+  "outputs": ["${OUT}/value/sha256-6afd2d448c7f44aa83f05d03c02936fee8218490e3adb8e78d7a147f54a06a16/48.json>sha256-c530b601bf263be050682c83f802c97027518baaa05a335f3576639cf252a151/8"]
+}
+#+end_src
+
+*** How to look up a task cached value based on task name
+This may not be possible.
+
+** How the current =githubWorkflowGenerate= task behaves
+*** Running the task for the first time (run 1)
+
+I have replaced the stirng contents of the =ci= and =clean= tasks with a dummy string. This simplifies the inputs.
+
+The exec log contains:
+#+begin_src js
+{
+  "input": {
+    "digest": "sha256-a2eeb0d114a6db8838d6895168dc4fb4785aeecc32e3be674b4c5751aee17e86/48",
+    "codeContentHash": "murmur3-0000000000000000000000002cfb963a/0",
+    "extraHash": "murmur3-00000000000000000000000000000000/0",
+    "str": "(true,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/clean.yml)"
+  },
+  "cacheHit": false,
+  "exitCode": 0,
+  "outputs": ["${OUT}/value/sha256-a2eeb0d114a6db8838d6895168dc4fb4785aeecc32e3be674b4c5751aee17e86/48.json>sha256-6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b/1"]
+}
+#+end_src
+
+And the SBT log has the =println= statement indicating a cache-miss and task run.
+The input string is the content string of .
+ - =true= for the =githubWorkflowIncludeClean= setting.
+ - /Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml
+ - /Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/clean.yml
+
+Note that we haven't declared the files as input, but the =ciYmlFile= task return type should be some kind of file. 
+
+*** Running the task again (run 2)
+
+#+begin_src js
+{
+  "input": {
+    "digest": "sha256-d7a5637aadf23dddfd01f54da9894495648f64049c0aade7fb17f92fdcb71e1a/48",
+    "codeContentHash": "murmur3-0000000000000000000000002cfb963a/0",
+    "extraHash": "murmur3-00000000000000000000000000000000/0",
+    "str": "(true,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/clean.yml)"
+  },
+  "cacheHit": false,
+  "exitCode": 0,
+  "outputs": ["${OUT}/value/sha256-d7a5637aadf23dddfd01f54da9894495648f64049c0aade7fb17f92fdcb71e1a/48.json>sha256-6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b/1"]
+}
+#+end_src
+
+There was a cache miss and the task was re-run. Note that all inputs appear to be the same, but the digest is different. The output hash is the same.
+The SBT log has the =println= statement.
+
+*** Running the task a third time (run 3)
+
+#+begin_src js
+{
+  "input": {
+    "digest": "sha256-d7a5637aadf23dddfd01f54da9894495648f64049c0aade7fb17f92fdcb71e1a/48",
+    "codeContentHash": "murmur3-0000000000000000000000002cfb963a/0",
+    "extraHash": "murmur3-00000000000000000000000000000000/0",
+    "str": "(true,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/clean.yml)"
+  },
+  "cacheHit": true,
+  "exitCode": 0,
+  "outputs": ["${OUT}/value/sha256-d7a5637aadf23dddfd01f54da9894495648f64049c0aade7fb17f92fdcb71e1a/48.json>sha256-6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b/1"]
+}
+#+end_src
+
+There is a cache hit. The digest is the same as for Run 2.
+The SBT log shows the disk cache hit.
+
+*** Modifying the =ci.yml= file and running again (run 4)
+
+#+begin_src js
+{
+  "input": {
+    "digest": "sha256-c45e7ef6dab99e1c52022e6fcfcd14aa8e27269a5c16e66ad91df74feedfce96/48",
+    "codeContentHash": "murmur3-0000000000000000000000002cfb963a/0",
+    "extraHash": "murmur3-00000000000000000000000000000000/0",
+    "str": "(true,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml,/Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/clean.yml)"
+  },
+  "cacheHit": false,
+  "exitCode": 0,
+  "outputs": ["${OUT}/value/sha256-c45e7ef6dab99e1c52022e6fcfcd14aa8e27269a5c16e66ad91df74feedfce96/48.json>sha256-6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b/1"]
+}
+#+end_src
+
+There is a cache miss.
+
+*** Conclusion
+The =ciYmlFile= task is keeping track of the contents of the file. This is not what we want because the second run is always executed.
+
+** Task caching behaviour
+*** Using =declareOutput=
+Used for tasks that write files to =target= .
+This cannot be done for =githubWorkflowGenerate= because workflow files are outside of =target=.
+#+begin_example
+Running githubWorkflowGenerate 90689594600911
+[error] Cannot cache task because its output files are outside the output directory:
+[error]   - ${BASE}/.github/workflows/ci.yml
+[error]   - ${BASE}/.github/workflows/clean.yml
+[success] elapsed time: 0 s, cache 0%, 1 error
+#+end_example
+
+*** Tasks that read string contents from files
+If there is a Task[String] which reads from a file using =IO.read= , the task will not re-evaluate when the content changes.
+
+The correct approach is to declare a private =Task[HashedVirtualFileRef]=, then read in a separate task. The fileref doesn't need to be within the target directory.
+
+*** Caching on task failure
+Tasks that fail with sys.error seem to be re-run.
+
+The =githubWorkflowCheck= task re-runs on failure, even if the inputs are the same.
+
+I have published a version without failure. There is a cache hit even if the check fails, provided there is no sys.error.
+*** =Task[FileRef]= when file is missing
+When the =ci= and =clean.yml= files don't exist, we get:
+#+begin_example
+[error] file referenced by the build does not exist: /Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml
+[error] (githubWorkflowCheck) file referenced by the build does not exist: /Users/zainab/dev/typelevel/sbt-typelevel-playground/.github/workflows/ci.yml
+#+end_example
+
+Note that previously, the check would fail with =NoSuchFileException= on =IO.read=.
+
+** Modifying the =githubWorkflowGenerate= task
+This now uses private =Task[FileRef]= to reference the =clean= and =ci.yml= files.
+
+* Writing compat layers
+The =sbt2-compat= plugin has most standard compat layers.
+The compat technique is described in [[https://www.scala-sbt.org/2.x/docs/en/changes/migrating-from-sbt-1.x.html#the-plugincompat-technique][the SBT docs]].
+
+** CacheImplicits
+Since =CacheImplicits= contain =given= instances, a compat layer must be introduced.
+#+begin_example
+// Scala 3
+object PluginCompat {
+  import CacheImplicits.given
+  val fileRefJsonFormat: JsonFormat[FileRef] = summon
+}
+#+end_example
+
+#+begin_example
+object PluginCompat {
+  import CacheImplicits.*
+  val fileRefJsonFormat: JsonFormat[FileRef] = implicitly
+}
+#+end_example
+
+* Testing the plugins
+
+The =sbt2= module in =build.sbt= contains an SBT 2 build of the plugins. It has a version set to =1.1.1= for easy local publishing.
+The =sbt-typelevel-2-playground= repo contains a build on SBT 2.0.
+The =sbt-typelevel-1-playground= repo contains a build on SBT 1.x.
+
+* Project matrix
+** Code that is impacted by cross project
+ - [X] In =TypelevelSettingsPlugin=, the =scala-2.12-=  and =scala-2.13+= directories are added for each cross.
+ - [X] The =MergifyPlugin= refers to =crossProjectBaseDirectory=. This is set by =fooCrossProject.in("foo")= and is the same as the base directory, unless explicitly overridden by the user. This needs manual testing.
+ - [X] The =TypelevelBspPlugin= is an extension of cross project.
+ - [X] The =CrossRootProject= assumes a cross-project structure.
+ - [X] The =GenerativePlugin= assumes it can build per scala version using the =++= syntax.
+ - [X] The =NoPublishPlugin= uses =crossScalaVersions= to determine ignored modules.
+ - [X] The =TypelevelSettingsPlugin= uses =crossScalaVersions= to add Scala 3 specific settings.
+ - [X] The =MimaPlugin= uses =scalaBinaryVersion=.
+** Migrating weaver to project matrix
+I have created a =project-matrix= branch on SBT 1.0 and am attempting to migrate weaver.
+*** Migrating to project matrix syntax
+
+#+begin_example
+lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
+  .in(file("modules/core"))
+  .settings(
+    name := "weaver-core"
+  )
+#+end_example
+
+This creates modules =coreJVM=, =coreJS= and =coreNative=.
+ - The =crossProjectBaseDirectory= is =/Users/zainab/dev/typelevel/weaver-test/modules/core=.
+ - The =baseDirectory= is =/Users/zainab/dev/typelevel/weaver-test/modules/core/jvm=.
+ - The =crossProjectCrossType= is =Full=.
+
+This is migrated to:
+#+begin_example
+lazy val core = projectMatrix.in(file("modules/core"))
+  .jvmPlatform(scalaVersions = allScalaVersions)
+  .jsPlatform(scalaVersions = allScalaVersions)
+  .nativePlatform(scalaVersions = allScalaVersions)
+#+end_example
+
+Which creates modules =core2_12=, =core3=, =core=, =coreJS2_12=, =coreJS= , =coreJS_3=, =coreNative2_12= etc.
+
+The =baseDirectory= for =core= is =/Users/zainab/dev/typelevel/weaver-test/.sbt/matrix/core=.
+The =projectMatrixBaseDirectory= is =modules/core=.
+
+The new =sourceDirectories= are:
+
+#+begin_example
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scala
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scala-2.13
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scala-2
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/java
+[info] * /Users/zainab/dev/typelevel/weaver-test/.sbt/matrix/core/src/main/scala-2.13+
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scalajvm
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scalajvm-2.13
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/javajvm
+[info] * /Users/zainab/dev/typelevel/weaver-test/modules/core/target/jvm-2.13/src_managed/main
+#+end_example
+
+So the source code will need to be restructured.
+
+*** Scala 3 options set in =TypelevelSettingsPlugin= 
+
+Following restructuring, we get the following error for =core3= :
+
+#+begin_example
+[error] -- [E056] Syntax Error: /Users/zainab/dev/typelevel/weaver-test/modules/core/src/main/scalajvm/weaver/PlatformCompat.scala:6:28
+[error] 6 |  def getClassLoader(clazz: java.lang.Class[_]): ClassLoader =
+[error]   |                            ^^^^^^^^^^^^^^^^^^
+[error]   |                            Missing type parameter for Class
+#+end_example
+
+The =scalacOptions= are
+
+#+begin_example
+sbt:weaver-core> show scalacOptions
+[info] * -deprecation
+[info] * -encoding
+[info] * UTF-8
+[info] * -feature
+[info] * -unchecked
+[info] * -Wunused:implicits
+[info] * -Wunused:explicits
+[info] * -Wunused:imports
+[info] * -Wunused:locals
+[info] * -Wunused:params
+[info] * -Wunused:privates
+[info] * -Wvalue-discard
+[info] * -Ykind-projector:underscores
+[info] * -java-output-version
+[info] * 8
+#+end_example
+
+The following are the old options:
+
+#+begin_example
+sbt:weaver-core> show scalacOptions
+[info] * -deprecation
+[info] * -encoding
+[info] * UTF-8
+[info] * -feature
+[info] * -unchecked
+[info] * -Wunused:implicits
+[info] * -Wunused:explicits
+[info] * -Wunused:imports
+[info] * -Wunused:locals
+[info] * -Wunused:params
+[info] * -Wunused:privates
+[info] * -Wvalue-discard
+[info] * -language:implicitConversions
+[info] * -Ykind-projector
+[info] * -java-output-version
+[info] * 8
+#+end_example
+
+We have =-Ykind-projector:underscores=. This is because =onlyScala3= is detected in the =TypelevelSettingsPlugin=
+
+
+The =onlyScala3= flag has been rewritten to reference =ThisBuild / crossScalaVersions= .
+
+*** The NoPublish module ignore list
+**** Previous behaviour
+
+The =noPublishModulesIgnore= list is as follows:
+
+#+begin_example
+sbt:root> show Global / noPublishModulesIgnore
+[info] * rootjs_2.12
+[info] * rootjs_2.13
+[info] * rootjs_3
+[info] * docs-output_2.12
+[info] * docs-output_2.13
+[info] * docs-output_3
+[info] * weaver-docs_2.12
+[info] * weaver-docs_2.13
+[info] * weaver-docs_3
+[info] * rootjvm_2.12
+[info] * rootjvm_2.13
+[info] * rootjvm_3
+[info] * rootnative_2.12
+[info] * rootnative_2.13
+[info] * rootnative_3
+#+end_example
+
+Note that the project list is
+
+#+begin_example
+[info] 	   catsJS
+[info] 	   catsJVM
+[info] 	   catsNative
+[info] 	   coreCatsJS
+[info] 	   coreCatsJVM
+[info] 	   coreCatsNative
+[info] 	   coreJS
+[info] 	   coreJVM
+[info] 	   coreNative
+[info] 	   disciplineJS
+[info] 	   disciplineJVM
+[info] 	   disciplineNative
+[info] 	   docs
+[info] 	   docsOutputJVM
+[info] 	   frameworkJS
+[info] 	   frameworkJVM
+[info] 	   frameworkNative
+[info] 	 * root
+[info] 	   rootJS
+[info] 	   rootJVM
+[info] 	   rootNative
+[info] 	   scalacheckJS
+[info] 	   scalacheckJVM
+[info] 	   scalacheckNative
+#+end_example
+
+As an example, the =docs-output= project has =fansi= as a dependency. It is excluded from the GitHub Insights dependency graph.
+
+The following is the modules-ignore list in GitHub Actions submit dependencies:
+#+begin_example
+rootjs_2.12
+rootjs_2.13
+rootjs_3
+docs-output_2.12
+docs-output_2.13
+docs-output_3
+weaver-docs_2.12
+weaver-docs_2.13
+weaver-docs_3
+rootjvm_2.12
+rootjvm_2.13
+rootjvm_3
+rootnative_2.12
+rootnative_2.13
+rootnative_3
+#+end_example
+
+The project ID for =docsOutputJVM= has the name =docs-output=.
+
+**** Behaviour afterwards
+After the migration:
+
+#+begin_example
+sbt:output for documentation> show Global / noPublishModulesIgnore
+[info] * rootjvm3_2.12
+[info] * rootjvm3_2.13
+[info] * rootjvm3_3
+[info] * rootnative3_2.12
+[info] * rootnative3_2.13
+[info] * rootnative3_3
+[info] * docs-output_3
+[info] * weaver-docs_2.12
+[info] * weaver-docs_2.13
+[info] * weaver-docs_3
+[info] * rootjvm2_12_2.12
+[info] * rootjvm2_12_2.13
+[info] * rootjvm2_12_3
+[info] * rootnative2_12_2.12
+[info] * rootnative2_12_2.13
+[info] * rootnative2_12_3
+[info] * rootjs2_13_2.12
+[info] * rootjs2_13_2.13
+[info] * rootjs2_13_3
+[info] * rootjvm2_13_2.12
+[info] * rootjvm2_13_2.13
+[info] * rootjvm2_13_3
+[info] * docs-output_2.12
+[info] * rootnative2_13_2.12
+[info] * rootnative2_13_2.13
+[info] * rootnative2_13_3
+[info] * rootjs3_2.12
+[info] * rootjs3_2.13
+[info] * rootjs3_3
+[info] * rootjs2_12_2.12
+[info] * rootjs2_12_2.13
+[info] * rootjs2_12_3
+[info] * docs-output_2.13
+#+end_example
+
+Note that the =docs-output= module is correct.
+
+The =rootjvm3_3=, =rootjvm3_2.12=  modules seem to have some extra duplication, but this may not matter to the behaviour of submit dependencies. It depends on how the SBT action actually discovers modules. 
+
+
+*** The tlVersionIntroduced setting in =TypelevelMimaPlugin=
+This should be unaffected by project matrix.
+
+** Migration guide for sbt-typelevel users
+ - Ensure that =crossProjectBaseDirectory= is not set. Use =projectMatrixBaseDirectory= instead.
+* Combining all SBT 2 PRs
+The three PRs ought to complete the SBT 2 migration.
+
+Created a new branch =cross-build-all-plugins=  and incorporate =sbt-pgp= changes.
+ - =core= requires =sbt-header= upgrade.
+
+** COMPLETED =githubWorkflowGenerate= generates a large os matrix
+
+The following code gets executed multiple times in the =sbt-typelevel= build:
+#+begin_example
+// sbt.version=2.0.6
+ThisBuild / githubWorkflowOSes ++= Seq(macOS, "windows-2022")
+#+end_example
+*** Repro in playground 
+It can be reproduced in the =sbt-typelevel-2-playground=.:
+
+#+begin_example
+ThisBuild / githubWorkflowOSes ++= Seq("windows-2022")
+#+end_example
+
+generates:
+
+#+begin_example
+        os:
+          - ubuntu-22.04
+          - windows-2022
+          - windows-2022
+          - windows-2022
+          - windows-2022
+          - windows-2022
+#+end_example
+
+*** Repro in sbt 2 vanilla playground 
+
+** COMPLETED =tlReleaseLocal= fails
+
+#+begin_example
+[error] (core / deliverLocal) deliver/makeIvyXml requires an Ivy-based publishing plugin, which is not part of this sbt distribution.
+#+end_example
+
+*** Try =publishLocal= 
+=publishLocal= succeeds. It could be that =tlReleaseLocal= is not meant for use in plugins.
+
+*** Try =tlReleaseLocal= on the main branch
+This succeeds.
+
+*** Try =tlReleaseLocal= on the =sbt-pgp= branch
+
+This succeeds on Scala 2.12 even after upgrading to =sbt-pgp= version =2.3.2=.
+
+The issue must be in the =sbt-pgp= =deliverLocal= call on Scala 3.
+
+*** Find the error in the SBT codebase
+https://github.com/sbt/sbt/pull/9615
+
+#+begin_example
+// In Defaults.scala
+      sys.error(
+        "deliver/makeIvyXml requires an Ivy-based publishing plugin, which is not part of this sbt distribution."
+      )
+#+end_example
+
+So we shouldn't be using =deliverLocal= .
+
+Have raised: https://github.com/sbt/sbt-pgp/issues/246
+
+** COMPLETED =mimaReportBinaryIssues= fails
+
+This is because there are no previous artifacts for SBT 2 plugins. It is expected.
+
+** COMPLETED =unidoc / Scalaunidoc / doc= fails
+#+begin_example
+[error] bad option: -P:semanticdb:targetroot:/Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/sbt-typelevel-docs/meta
+[error] one error found
+[error] Scaladoc generation failed
+[error] 	at xsbt.Runner.run(ScaladocBridge.scala:50)
+[error] 	at xsbt.ScaladocBridge.run(ScaladocBridge.scala:21)
+[error] 	at sbt.internal.inc.AnalyzingCompiler.doc(AnalyzingCompiler.scala:154)
+[error] 	at sbt.internal.inc.AnalyzingCompiler.doc(AnalyzingCompiler.scala:133)
+[error] 	at sbtunidoc.Unidoc$.apply(Unidoc.scala:53)
+[error] 	at sbtunidoc.BaseUnidocPlugin$.baseUnidocSettings$$anonfun$1(BaseUnidocPlugin.scala:24)
+[error] 	at scala.Function1.$anonfun$compose$1(Function1.scala:79)
+[error] 	at scala.Function1.$anonfun$compose$1(Function1.scala:79)
+[error] 	at sbt.std.Transform$$anon$3.work(Transform.scala:79)
+[error] 	at sbt.std.Transform$$anon$3.work(Transform.scala:79)
+[error] 	at sbt.Execute.submit$$anonfun$1$$anonfun$1(Execute.scala:283)
+[error] 	at sbt.internal.util.ErrorHandling$.wideConvert(ErrorHandling.scala:24)
+[error] 	at sbt.Execute.work(Execute.scala:294)
+[error] 	at sbt.Execute.submit$$anonfun$1(Execute.scala:283)
+[error] 	at sbt.ConcurrentRestrictions$$anon$4.$anonfun$2(ConcurrentRestrictions.scala:269)
+[error] 	at sbt.CompletionService$$anon$2.call(CompletionService.scala:75)
+[error] 	at sbt.CompletionService$$anon$2.call(CompletionService.scala:73)
+[error] 	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328)
+[error] 	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+[error] 	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328)
+[error] 	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+[error] 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+[error] 	at java.base/java.lang.Thread.run(Thread.java:1474)
+[error] (unidoc / Scalaunidoc / doc) Scaladoc generation failed
+sbt:sbt-typelevel>
+#+end_example
+
+The start of the log is:
+
+#+begin_example
+[debug] Calling Scaladoc with arguments:
+[debug] 	-d
+[debug] 	/Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/sbt-typelevel-docs/unidoc
+[debug] 	-deprecation
+[debug] 	-encoding
+[debug] 	UTF-8
+[debug] 	-feature
+[debug] 	-unchecked
+[debug] 	-Ywarn-numeric-widen
+[debug] 	-Xlint:_,-unused
+[debug] 	-Ywarn-unused:_,-nowarn,-privates
+[debug] 	-Ywarn-dead-code
+[debug] 	-Ypartial-unification
+[debug] 	-Ybackend-parallelism
+[debug] 	8
+[debug] 	-language:_
+[debug] 	-Xsource:3
+[debug] 	-release
+[debug] 	8
+[debug] 	-target:jvm-1.8
+[debug] 	-Xplugin:${CSR_CACHE}/https/repo1.maven.org/maven2/com/olegpy/better-monadic-for_2.12/0.3.1/better-monadic-for_2.1       2-0.3.1.jar
+[debug] 	-Xplugin:${CSR_CACHE}/https/repo1.maven.org/maven2/org/typelevel/kind-projector_2.12.21/0.13.4/kind-projector_2.12       .21-0.13.4.jar
+[debug] 	-Xplugin:${CSR_CACHE}/https/repo1.maven.org/maven2/org/scalameta/semanticdb-scalac_2.12.21/4.17.0/semanticdb-scala       c_2.12.21-4.17.0.jar
+[debug] 	-Yrangepos
+[debug] 	-P:semanticdb:targetroot:/Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/sbt-typelevel-docs       /meta
+[debug] 	-doc-source-url
+[debug] 	https://github.com/typelevel/sbt-typelevel/blob/a039882563778954882674cf79c4dff85b6e574c€{FILE_PATH}.scala
+[debug] 	-sourcepath
+[debug] 	/Users/zainab/dev/typelevel/sbt-typelevel
+[debug] 	-doc-external-doc:/Users/zainab/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/http4s/http4s-crypto_2 
+#+end_example
+
+*** Try with only the =ScalaUnidocPlugin=
+
+#+begin_example
+addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.14.7")
+addSbtPlugin("com.github.sbt" % "sbt-unidoc" % "0.6.1")
+#+end_example
+
+This doesn't reproduce the error
+*** Try with the =TypelevelPlugin= dependency
+
+#+begin_example
+addSbtPlugin("org.typelevel" % "sbt-typelevel" % "0.8.6-54-5014100-20260909T111237Z-SNAPSHOT")
+#+end_example
+This also doesn't reproduce the error.
+
+*** Try in =sbt-typelevel=
+The error has since disappeared.
+
+** COMPLETED =sbt-typelevel= needs exclusion rules in its own build
+
+See the notes on =Conflicting cross-version suffixes=.
+
+The update report wasn't useful when investigating.
+
+** COMPLETED =gitDescribedVersion= must be added to =excludeLintKeys=
+SBT raises a warning that the setting is unused.
+#+begin_example
+[warn] * kernel / gitDescribedVersion
+[warn]   +- gitDescribedVersion := {
+[warn]       val projectPatterns = gitDescribePatterns.value
+[warn]       val buildPatterns = (ThisBuild / gitDescribePatterns).value
+[warn]       val projectTagToVersionNumber = gitTagToVersionNumber.value
+[warn]       val buildTagToVersionNumber = (ThisBuild / gitTagToVersionNumber).value
+[warn]       if (projectPatterns == buildPatterns && projectTagToVersionNumber == buildTagToVersionNumber)
+[warn]         (ThisBuild / gitDescribedVersion).value
+[warn]       else gitReader.value.withGit(_.describedVersion(projectPatterns)).map(v => projectTagToVersionNumber(v).getOrElse(v))
+[warn]     }:167
+#+end_example
+
+*** Try out =sbt-git= in =sbt-playground= repo
+
+#+begin_example
+addSbtPlugin("com.github.sbt" % "sbt-git" % "2.1.0")
+#+end_example
+
+The warnings still occur.
+
+This is a known issue in =sbt-git=: https://github.com/sbt/sbt-git/issues/379
+*** Upgrade =sbt-git=
+This was resolved in the latest snapshot. Upgrading to =2.20= fixed the issue.
+
+** COMPLETED Assess impact of settings and env vars
+What happens on setting reload?
+Env vars are read per-project session. They are read on the first session for a project and kept for that specific project.
+This means no changes are needed to env-var parts of the plugin.
+** COMPLETED List latest scalajs version for docs
+** COMPLETED Make =nowarn= annotations more specific
+
+* Try out published jar in typelevel projects 
+ - 0.8.6-36-a039882-20260826T165215Z-SNAPSHOT inital
+ - 0.8.6-42-e199930-20260907T101211Z-SNAPSHOT has been published with a new SBT version.
+ - 0.8.6-47-08cfecd-20260907T135947Z-SNAPSHOT has been published with a scalafmt upgrade.
+ - 0.8.6-50-6c4823c-20260908T093850Z-SNAPSHOT has been published with a platform-specific scalac-compat-annotation
+ - 0.8.6-54-5014100-20260909T111237Z-SNAPSHOT has been published with sbt-git v 2.2.0
+ - 0.8.6-81-66d49f1-20261029T123518Z-SNAPSHOT has been published for 2.12
+** Project checklist
+ - [X] scalacheck. Has some source generation, but no issues with SBT typelevel. https://github.com/typelevel/scalacheck/compare/main...zainab-ali:sbt-2
+ - [X] discipline at https://github.com/typelevel/discipline/compare/main...zainab-ali:sbt-2
+ - [X] cats at https://github.com/typelevel/cats/compare/main...zainab-ali:sbt-2
+ - [X] cats-effect at https://github.com/typelevel/cats-effect/compare/series/3.x...zainab-ali:sbt-2. No site - seems to use docusaurus on a branch.
+ - [X] weaver at https://github.com/typelevel/weaver-test/compare/main...zainab-ali:sbt-2
+
+** COMPLETED Conflicting cross-version suffixes
+#+begin_example
+[error] Modules were resolved with conflicting cross-version suffixes in ProjectRef(uri("file:/Users/zainab/dev/typelevel/sbt-typelevel-2-playground/project/"), "sbt-typelevel-2-playground-build"):
+[error]    com.github.plokhotnyuk.jsoniter-scala:jsoniter-scala-core _3, _2.13
+[error]    org.scala-lang.modules:scala-xml _3, _2.13
+[error]    org.scala-lang.modules:scala-collection-compat _3, _2.13
+[error] java.lang.RuntimeException: Conflicting cross-version suffixes in: com.github.plokhotnyuk.jsoniter-scala:jsoniter-scala-core, org
+#+end_example
+
+This works after adding the following exclusion rules:
+
+#+begin_example
+excludeDependencies ++= {
+  Seq(
+    ExclusionRule(
+      "org.scala-lang.modules",
+      "scala-collection-compat_2.13"
+    ),
+    ExclusionRule("org.scala-lang.modules", "scala-xml_2.13"),
+    ExclusionRule("com.github.plokhotnyuk.jsoniter-scala", "jsoniter-scala-core_2.13")
+  )
+}
+#+end_example
+
+*** What dependency pulls these in?
+=sbt-scalafmt= pulls in =jsoniter-scala=.
+#+begin_example
+  +-org.scalameta:sbt-scalafmt:2.5.6
+  | +-com.googlecode.java-diff-utils:diffutils:1.3.0
+  | +-org.scalameta:scalafmt-dynamic_2.12:3.10.0 [S]
+  | | +-com.typesafe:config:1.4.5 (*)
+  | | +-io.get-coursier:coursier_2.12:2.1.24 [S]
+  | | | +-com.github.plokhotnyuk.jsoniter-scala:jsoniter-scala-core_2.12:2.13...
+  | | | +-com.github.plokhotnyuk.jsoniter-scala:jsoniter-scala-core_2.12:2.13...
+#+end_example
+
+=scala-xml_3= is pulled in by SBT 2.0
+
+#+begin_example
+  | +-org.scala-sbt:main_3:2.1.0-SNAPSHOT
+#+end_example
+
+*** Make a =sbt-playground= project with =scalafmt-sbt=
+It loads fine.
+
+EDIT: On a second try, it does not load fine.
+
+We get a =conflicting cross-version suffixes= error
+
+#+begin_example
+[warn] Removed stale /Users/zainab/dev/typelevel/sbt-typelevel-2-playground/project/.bloop/sbt-typelevel-2-playground-build.json
+[error] java.lang.RuntimeException: Conflicting cross-version suffixes in: org.scala-lang.modules:scala-xml, org.scala-lang.modules:scala-collection-compat
+[error] 	at scala.sys.package$.error(package.scala:28)
+#+end_example
+
+*** Upgrade to =sbt-scalafmt= =2.6.2= in playground
+
+This resolves the error.
+
+#+begin_example
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.6.2")
+#+end_example
+
+*** Upgrade to =sbt-scalafmt= =2.6.2= in =sbt-typelevel= 
+
+This causes coursier errors:
+
+#+begin_example
+[info] compiling 54 Scala sources to /Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-3.8.4/sbt-typelevel-build/classes ...
+-- [E006] Not Found Error: /Users/zainab/dev/typelevel/sbt-typelevel/build.sbt:217:13
+217 |      import coursier.complete.Complete
+    |             ^^^^^^^^
+    |             Not found: coursier - did you mean coursierint?
+    |
+    | longer explanation available when compiling with `-explain`
+-- Error: /Users/zainab/dev/typelevel/sbt-typelevel/build.sbt:217:22 -----------
+217 |      import coursier.complete.Complete
+    |             ^^^^^^^^^^^^^^^^^
+    |(<error Not found: coursier - did you mean coursierint?>#complete :
+    |  <error Not found: coursier - did you mean coursierint?>) is not a legal path
+    |since it is not a concrete type
+-- [E007] Type Mismatch Error: /Users/zainab/dev/typelevel/sbt-typelevel/build.sbt:228:24
+228 |        Try(Await.result(fut, 5.seconds)._2.last).toOption
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |Found:    Nothing
+    |Required: ?{ _2: ? }
+    |Note that implicit conversions were not tried because the result of an implicit conversion
+    |must be more specific than ?{ _2: ?{ last: Nothing } }
+    |
+    | longer explanation available when compiling with `-explain`
+sbt.internal.EvalException: an error in expression: class dotty.tools.dotc.reporting.Diagnostic$Error at /Users/zainab/dev/typelevel/sbt-typelevel/build.sbt:[13378..13390..13406] L228: Found:    Nothing
+Required: ?{ _2: ? }
+Note that implicit conversions were not tried because the result of an implicit conversion
+must be more specific than ?{ _2: ?{ last: Nothing } }
+[error] sbt.internal.EvalException: an error in expression: class dotty.tools.dotc.reporting.Diagnostic$Error at /Users/zainab/dev/typelevel/sbt-typelevel/build.sbt:[13378..13390..13406] L228: Found:    Nothing
+[error] Required: ?{ _2: ? }
+[error] Note that implicit conversions were not tried because the result of an implicit conversion
+[error] must be more specific than ?{ _2: ?{ last: Nothing } }
+[error] Use 'last' for the full log.
+#+end_example
+
+The build on =2.5.6= pulls in a shaded coursier:
+In =project/project/target/streams/compile/dependencyClasspath/_global/streams/export=
+#+begin_example
+/Users/zainab/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/io/get-coursier/lm-coursier-shaded_2.12/2.1.10/lm-coursier-shaded_2.12-2.1.10.jar
+#+end_example
+
+This is not present on upgrading.
+
+*** Publish a snapshot with the upgraded version
+
+Version =0.8.6-47-08cfecd-20260907T135947Z-SNAPSHOT= has the upgrade.
+
+This resolves the issue in the playground.
+
+** COMPLETED overlapping output directories
+
+This occurs when using the plugin in the scalacheck codebase:
+
+#+begin_example
+[error] Overlapping output directories:/Users/zainab/dev/typelevel/scalacheck/target/out/jvm/scala-2.13.18/scalacheck:
+[error] 	ProjectRef(file:/Users/zainab/dev/typelevel/scalacheck/,coreJVM)
+[error] 	ProjectRef(file:/Users/zainab/dev/typelevel/scalacheck/,root)
+[error] 	ProjectRef(file:/Users/zainab/dev/typelevel/scalacheck/,rootJS)
+[error] 	ProjectRef(file:/Users/zainab/dev/typelevel/scalacheck/,rootJVM)
+[error] 	ProjectRef(file:/Users/zainab/dev/typelevel/scalacheck/,rootNative)
+#+end_example
+
+I have seen this before, possibly with project matrix.
+
+I've followed up on this in the SBT discord.
+
+** COMPLETED Value %%% is not a member of String
+
+According to the [[https://www.scala-sbt.org/2.x/docs/en/changes/sbt-2.0-change-summary.html][SBT 2 changelog]], the =%%%= operator has been replaced with =%%= .
+
+We can safely replace it in builds.
+
+** COMPLETED Unresolved dependency =scalac-compat-annotation_sjs1_3=
+
+This occurs in =discipline=.
+
+#+begin_example
+[warn] 	Note: Unresolved dependencies path:
+Failed to download https://repo1.maven.org/maven2/org/typelevel/scalac-compat-annotation_sjs1_3/0.1.4/scalac-compat-annotation_sjs1_3-0.1.4.pom.sha1
+[warn]
+[warn] 	Note: Unresolved dependencies path:
+[warn] 		org.typelevel:scalac-compat-annotation_native0.5_3:0.1.4 (build.sbt#L7)
+[warn] 		org.typelevel:scalac-compat-annotation_sjs1_3:0.1.4 (build.sbt#L7)
+[warn] 		  +- org.typelevel:discipline-core_native0.5_3:1.7.0-111-65b0ca7-SNAPSHOT (e:info.apiURL=https://javadoc.invalid/d       oc/org.typelevel/discipline-core_3/1.7.0-111-65b0ca7-SNAPSHOT/, e:info.versionScheme=early-semver)
+[warn] 		  +- org.typelevel:discipline-core_sjs1_3:1.7.0-111-65b0ca7-SNAPSHOT (e:info.apiURL=https://javadoc.invalid/doc/or       g.typelevel/discipline-core_3/1.7.0-111-65b0ca7-SNAPSHOT/, e:info.versionScheme=early-semver)
+[error] stack trace is suppressed; run last coreJS / update for the full output
+#+end_example
+
+The library dependencies are
+
+#+begin_example
+sbt:discipline> show libraryDependencies
+[info] * org.scala-lang:scala3-library_sjs1:3.3.7
+[info] * org.scala-js:scalajs-library_2.13:1.21.0
+[info] * org.scala-js:scalajs-test-bridge_2.13:1.21.0:test
+[info] * org.typelevel:scalac-compat-annotation:0.1.4:provided
+[info] * org.scalacheck:scalacheck:1.19.0
+sbt:discipline>
+#+end_example
+
+The dependency =scalac-compat-annotation= comes from the typelevel settings plugin.
+
+In SBT 2, library dependencies are added for all platforms by default. We need to specify the dependency for JVM only:
+
+#+begin_example
+// In TypelevelSettingsPlugin
+          Seq(("org.typelevel" %% "scalac-compat-annotation" % "0.1.4" % Provided).platform(Platform.jvm))
+#+end_example
+
+** COMPLETED GitHub workflow projects are out of order
+Check that the SBT 1.x plugun works.
+
+The SBT 1.x plugin works.
+
+The version =0.8.6-54-5014100-20260909T112944Z-SNAPSHOT= contains print statements
+             0.8.6-54-5014100-20260909T114934Z-SNAPSHOT
+
+In the log for SBT 2, we see:
+
+#+begin_example
+// val sbtTlVersion = "0.8.6-54-5014100-20260909T123545Z-SNAPSHOT"
+Enabling JVM
+Enabling JS
+Enabling Native
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+[info] set scmInfo to https://github.com/typelevel/discipline
+Adding JS to project matrix
+Adding JVM to project matrix
+Adding Native to project matrix
+#+end_example
+
+The project core is specified as:
+#+begin_example
+lazy val core = crossProject(JSPlatform, JVMPlatform, NativePlatform)
+#+end_example
+
+So it could be the order of =crossProject= that we're working with.
+
+I can't seem to reproduce this in a playground project. Giving up for now.
+
+*** agentic hypothesis
+The Scala 2.12 and Scala 3 hashmap implementations are ordered differently. There's nothing that fixes the order in which build settings are applied, so they happen to be applied differently in SBT 2.
+
+If so, there is no easy way to address this.
+
+** COMPLETED Error running =tlSite= for the first time
+
+This error occurs when running =docs / laikaSite=. It only occurs if =docs / mdoc= has not been run.
+
+#+begin_example
+[error] stack trace is suppressed; run last docs / laikaSite for the full output
+[error] (docs / laikaSite) laika.io.internal.errors.ParserErrors: Multiple errors during parsing: Path does not exist or is not a directory: /Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/docs/mdoc
+#+end_example
+
+This error occurs when a directory in =Laika / sourceDirectories= doesn't exist. It is raised in Laika-only builds in both SBT 1 and 2.
+In SBT 1 typelevel builds, =tlSite= runs =mdoc= first, so the file is written to and the directory exists.
+In SBT 2, the directory doesn't exist.
+
+*** Try reproducing the error
+It doesn't seem to occur anymore.
+** COMPLETED Unresolved =scalajs-test-interface=  dependency
+This occurred in weaver
+#+begin_example
+[info] Resolved weaver-framework_sjs1_2.13 dependencies
+[warn]
+[warn] 	Note: Unresolved dependencies path:
+[warn] 		org.scala-js:scalajs-test-interface_sjs1_2.13:1.22.0 (Structure.scala#L99)
+[warn] 		  +- org.typelevel:weaver-framework_sjs1_2.13:0.13.0-61-100ef3a-20261029T131412Z-SNAPSHOT (e:info.apiURL=https://j       avadoc.invalid/doc/org.typelevel/weaver-docs_2.13/0.13.0-61-100ef3a-20261029T131412Z-SNAPSHOT/, e:info.versionScheme=early-semver)
+[info] compiling 6 Scala sources to /Users/zainab/dev/typelevel/weaver-test/target/out/sjs1/scala-2.13.18/weaver-cats-core/classes ...
+
+#+end_example
+
+The dependency is JVM-specific, even though the project is JS.
+
+#+begin_example
+lazy val frameworkJS = framework.js
+  .settings(
+    libraryDependencies ++= Seq(
+      ("org.scala-js" %% "scalajs-test-interface" % scalaJSVersion).cross(CrossVersion.for3Use2_13)
+      .platform(Platform.jvm) // This line resolves the issue
+    )
+  )
+#+end_example
+
+* Self review
+** COMPLETED Understand new exclusions in =ci.yml=
+** COMPLETED Check =Seq= usage in =WorkflowJob=
+** COMPLETED Check nowarn annotations
+** COMPLETED Check all tasks are cached properly
+ - mergifyGenerate: uncached
+ - mergifyCheck: cached
+ - githubWorkflowCheck: cached
+ - githubWorkflowGenerate: uncached
+ - tlSite: no need as =sequential= 
+ - tlSitePreview: no need as =taskDyn= 
+** BACKLOG Fix bug in =sbt-pgp=
+** COMPLETED Check =ghpages= in =ci.yml= uses correct path
+** COMPLETED Remove duplicate =crossScalaVersions= in =build.sbt=
+** COMPLETED Add a link to SBT code in =CrossRootProjectMacros=
+** COMPLETED Explain that SuiteResults are copied from the SBT codebase
+** COMPLETED Make SuiteResults private
+** COMPLETED Check whether =PluginCompat.url= can be shared
+It can't. There is no central module to share it with.
+** COMPLETED Make PluginCompat objects private
+** COMPLETED Why does javaspec have a deprecation warning?
+The warning is seen when entering the SBT shell with the symlinked =JavaSpec= source.
+** COMPLETED Explain why Java 11 is dropped
+The =TypelevelCiPlugin= uses Java 17 as the minimum version required to run SBT on Scala 3.
+#+begin_example
+- WorkflowStep.SetupJava(List(JavaSpec.temurin("11")), false)
++ WorkflowStep.SetupJava(List(JavaSpec.temurin("17")), false)
+#+end_example
+** COMPLETED Should Java 11 be dropped for SBT 1?
+No.
+** BACKLOG How should Java versions be handled in CI workflows?
+In SBT 2, the minimum Java version should be 17.
+
+** Explain why sbt-typelevel module has changed to sbtTypelevel
+
+This shared the same name as =core=, so needed to be renamed. Modules in SBT 2 cannot have the same name.
+We could have changed the outputPath, but this was the more straightforward solution.
+
+** BACKLOG =tlSitePreview= occasionally does not render anything
+
+When running =tlSitePreview= , the logs indicate that the preview server is up, but we don't see anything running on port =4242=.
+This has occurred twice.
+
+When the preview server is up and running successfully, we see:
+#+begin_example
+zainab@beagle:~/dev/typelevel/sbt-typelevel/ > lsof | rg 4242
+firefox     926 zainab  156u     IPv4 0xa0ad9bdc75800922        0t0                 TCP localhost:50459->localhost:4242 (ESTABLISHED)
+firefox     926 zainab  157u     IPv4 0x8b76b686b1363909        0t0                 TCP localhost:50457->localhost:4242 (ESTABLISHED)
+firefox     926 zainab  161u     IPv4  0x3c3852adc4e101d        0t0                 TCP localhost:50458->localhost:4242 (ESTABLISHED)
+firefox     926 zainab  272u     IPv4  0x9d569f8526cd87f        0t0                 TCP localhost:50456->localhost:4242 (ESTABLISHED)
+java      32584 zainab  592u     IPv6 0xee2afaa973d5b219        0t0                 TCP localhost:4242 (LISTEN)
+java      32584 zainab  693u     IPv6 0x5004b1271d206e7e        0t0                 TCP localhost:4242->localhost:50456 (ESTABLISHED)
+java      32584 zainab  694u     IPv6 0x393f89ae178efc5f        0t0                 TCP localhost:4242->localhost:50457 (ESTABLISHED)
+java      32584 zainab  695u     IPv6 0x8b5f98fd8c739fad        0t0                 TCP localhost:4242->localhost:50458 (ESTABLISHED)
+java      32584 zainab  696u     IPv6 0x76cbe4b1f1371498        0t0                 TCP localhost:4242->localhost:50459 (ESTABLISHED)
+#+end_example
+
+If the preview server is cancelled, and then we rebind, we see
+
+#+begin_example
+sbt:sbtTypelevel> docs/tlSitePreview
+[info] running mdoc.SbtMain
+info: Compiling 16 files to /Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/docs/mdoc
+info: Compiled in 0.27s (0 errors)
+[info] Initializing server...
+[info] Initializing server...
+java.net.BindException: Address already in use
+  | => dat java.base/sun.nio.ch.Net.bind0(Native Method)
+	at java.base/sun.nio.ch.Net.bind(Net.java:577)
+	at java.base/sun.nio.ch.Net.bind(Net.java:566)
+	at java.base/sun.nio.ch.AsynchronousServerSocketChannelImpl.bind(AsynchronousServerSocketChannelImpl.java:164)
+	at java.base/java.nio.channels.AsynchronousServerSocketChannel.bind(AsynchronousServerSocketChannel.java:198)
+	at fs2.io.net.SocketGroupCompanionPlatform.fs2$io$net$SocketGroupCompanionPlatform$AsyncSocketGroup$$_$$anonfun$2$$anonfun       $3$$anonfun$1(SocketGroupPlatform.scala:102)
+	at delay @ fs2.io.net.SocketGroupCompanionPlatform$AsyncSocketGroup.$anonfun$2$$anonfun$3(SocketGroupPlatform.scala:104)
+[error] stack trace is suppressed; run last docs / tlSitePreview for the full output
+[error] (docs / tlSitePreview) java.net.BindException: Address already in use
+[error] elapsed time: 1 s, cache 85%, 29 disk cache hits, 5 onsite tasks
+#+end_example
+
+Which is fine.
+
+I've managed to reproduce it:
+#+begin_example
+
+λ> sbt
+[info] entering thin client - BEEP WHIRR
+[info] starting sbt server in the background
+[info] use 'sbt shutdown' to shutdown the server
+[info]
+[info] welcome to sbt 2.0.8 (Azul Systems, Inc. Java 21.0.11)
+[info] loading project definition from /Users/zainab/dev/typelevel/sbt-typelevel/project/project/project
+[info] loading project definition from /Users/zainab/dev/typelevel/sbt-typelevel/project/project
+[success] Generated .bloop/sbt-typelevel-build-build.json
+[success] elapsed time: 1 s, cache 100%, 11 disk cache hits
+[info] loading project definition from /Users/zainab/dev/typelevel/sbt-typelevel/project
+[success] Generated .bloop/sbt-typelevel-build.json
+[success] elapsed time: 1 s, cache 100%, 11 disk cache hits
+[info] resolving key references (38280 settings) ...
+[info] set scmInfo to https://github.com/typelevel/sbt-typelevel
+[info] set current project to sbtTypelevel (in build file:/Users/zainab/dev/typelevel/sbt-typelevel/)
+sbt:sbtTypelevel> docs/tlSitePreview
+[info] running (fork) mdoc.SbtMain
+info: Compiling 16 files to /Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/docs/mdoc
+info: Compiled in 0.33s (0 errors)
+[success] ok
+[info] Initializing server...
+[info] Initializing server...
+[info] Preview server started at http://127.0.0.1:4242/
+[info] running (fork) mdoc.SbtMain --watch --no-livereload
+info: Compiling 16 files to /Users/zainab/dev/typelevel/sbt-typelevel/target/out/jvm/scala-2.12.21/docs/mdoc
+info: Compiled in 0.39s (0 errors)
+Waiting for file changes (press enter to interrupt)
+#+end_example
+
+This occurs when running =sbt= without the =server= argument. Running =sbt --server= seems to always get a site.
+The global log indicates that the task was cancelled somehow.
+
+This could be something specific to =sbtn= .
+
+It is indeed specific to =sbtn= on SBT 2 and =sbt-typelevel= . The =laikaPreview= task is fine, but the =tlSitePreview= task isn't.
+
+Pointers: try the =debug= command. Try and see the code in =NetworkClient= to understand communication.
+
+* User migration guide
+** Upgrade to new version on Scala 2.12
+*** Explain that sbt-header has changed org
+*** Explain that sbt-pgp is new
+** Upgrade your plugin dependencies
+Here are some minimum versions
+#+begin_example
+addSbtPlugin("org.scala-js" % "sbt-scalajs" % "1.22.0")
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.6.2")
+#+end_example
+** Upgrade to SBT 2
+*** Expect CI workflows to be in a different order
+*** Expect to change names
+You may need to modify module names, or the name of the root module, if they conflict with each other.
+
+* COMPLETED Laika review
+** nowarn annotations
+#+begin_example
+  @nowarn("msg=unused import")
+#+end_example
+** Check if input tasks such as =generate= need to be uncached
+Marked as uncached in the plugin.
+Checking on Discord to be sure.
+
+They shouldn't need to, as of SBT =2.1.0-M3=. Also, tasks declared with =Def.task= are uncached.
+
+#+begin_example
+Most of these `Def.uncached` calls can be removed once we upgrade to SBT `2.1.0-M3`.
+
+All the tasks defined in the `Tasks` object are uncached as they're defined using `Def.task`, `Def.taskDyn` or `Def.inputTask`. However `:=` still goes through the caching machinery, so needs an explicit `Def.uncached` call. In SBT `2.1.0-M3`, [simple expressions short circuit the caching macro machinery](https://github.com/sbt/sbt/issues/9830).
+#+end_example
+
+
+| Constructor        | Cached |
+|--------------------|--------|
+| `Def.task`         | N      |
+| `Def.uncachedTask` | N      |
+| `Def.taskDyn`      | N      |
+| `Def.inputTask`    | N      |
+| `Def.cachedTask`   | Y      |
+| `:=`               | Y      |
+
+** Check exclusions in CI matrix
+These don't look correct. Here's an example run on main:
+https://github.com/typelevel/Laika/actions/runs/17583309500/job/49945748986
+
+Here's an example in the branch:
+https://github.com/typelevel/Laika/pull/774/checks
+** Check build.sbt changes
+** Check sbt-compat plugin
